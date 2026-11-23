@@ -1,697 +1,812 @@
 
 import javax.swing.*;
-import javax.swing.table.DefaultTableModel;
+import javax.swing.border.*;
+import javax.swing.table.*;
 import java.awt.*;
 import java.sql.*;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.Map;
+import java.util.List;
 
-// SISTEMA DE GERENCIAMENTO PORTFOLIO
 public class Portfolio extends JFrame {
 
-    // CONEXÃO COM MYSQL
-    private static final String URL =
-        "jdbc:mysql://localhost:3306/portfolio";
+    // ==========================================
+    // CORES DO SISTEMA - PALETA VERDE
+    // ==========================================
 
-    private static final String USUARIO = "root";
-    private static final String SENHA = "";
+    private final Color VERDE_ESCURO = new Color(22, 78, 54);
+    private final Color VERDE = new Color(35, 122, 80);
+    private final Color VERDE_MEDIO = new Color(85, 168, 121);
+    private final Color VERDE_CLARO = new Color(229, 242, 233);
+    private final Color FUNDO = new Color(247, 250, 247);
+    private final Color BRANCO = Color.WHITE;
+    private final Color TEXTO = new Color(45, 65, 53);
 
-    // CONFIGURAÇÃO DAS TABELAS
+    // ==========================================
+    // CONEXÃO COM O BANCO DE DADOS
+    // ==========================================
+
+    private final String URL =
+        "jdbc:mysql://localhost:3306/portfolio?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true";
+
+    private final String USUARIO = "root";
+    private final String SENHA = "";
+
+    private Connection conectar() throws SQLException {
+        return DriverManager.getConnection(URL, USUARIO, SENHA);
+    }
+
+    // ==========================================
+    // CONFIGURAÇÕES DAS TABELAS
+    // ==========================================
+
     private static class Configuracao {
-
-        String tabela;
+        String nomeTabela;
+        String titulo;
+        String[] colunas;
         String[] campos;
-        String[] nomes;
-        String[] obrigatorios;
+        String[] rotulos;
 
-        Configuracao(String tabela, String[] campos,
-                     String[] nomes, String[] obrigatorios) {
-
-            this.tabela = tabela;
+        Configuracao(
+            String nomeTabela,
+            String titulo,
+            String[] colunas,
+            String[] campos,
+            String[] rotulos
+        ) {
+            this.nomeTabela = nomeTabela;
+            this.titulo = titulo;
+            this.colunas = colunas;
             this.campos = campos;
-            this.nomes = nomes;
-            this.obrigatorios = obrigatorios;
+            this.rotulos = rotulos;
         }
     }
 
-    // ORDEM OBRIGATÓRIA DAS TABELAS
-    private final Configuracao[] configuracoes = {
+    private final Configuracao configUsuario = new Configuracao(
+        "usuario",
+        "Gerenciamento de Usuários",
+        new String[]{"id", "nome", "email", "senha", "data_cadastro"},
+        new String[]{"nome", "email", "senha"},
+        new String[]{"Nome", "E-mail", "Senha"}
+    );
 
-        // 1. USUÁRIOS
-        new Configuracao(
-            "usuario",
-            new String[]{
-                "nome", "email", "senha"
-            },
-            new String[]{
-                "Nome", "E-mail", "Senha"
-            },
-            new String[]{
-                "nome", "email", "senha"
-            }
-        ),
+    private final Configuracao configPostagem = new Configuracao(
+        "postagem",
+        "Gerenciamento de Postagens",
+        new String[]{
+            "id", "titulo", "conteudo", "imagem",
+            "autor_id", "data_publicacao", "status"
+        },
+        new String[]{"titulo", "conteudo", "imagem", "autor_id", "status"},
+        new String[]{"Título", "Conteúdo", "Imagem", "ID do Autor", "Status"}
+    );
 
-        // 2. POSTAGENS
-        new Configuracao(
-            "postagem",
-            new String[]{
-                "titulo", "conteudo", "imagem",
-                "autor_id", "status"
-            },
-            new String[]{
-                "Título", "Conteúdo", "Imagem",
-                "ID do autor", "Status"
-            },
-            new String[]{
-                "titulo", "conteudo", "autor_id", "status"
-            }
-        ),
+    private final Configuracao configProject = new Configuracao(
+        "project",
+        "Gerenciamento de Projetos",
+        new String[]{
+            "id", "titulo", "descricao", "link",
+            "tecnologias", "data_criacao"
+        },
+        new String[]{"titulo", "descricao", "link", "tecnologias"},
+        new String[]{"Título", "Descrição", "Link", "Tecnologias"}
+    );
 
-        // 3. PROJETOS
-        new Configuracao(
-            "project",
-            new String[]{
-                "titulo", "descricao", "link",
-                "tecnologias", "data_criacao"
-            },
-            new String[]{
-                "Título", "Descrição", "Link",
-                "Tecnologias", "Data de criação"
-            },
-            new String[]{
-                "titulo", "descricao", "link",
-                "tecnologias", "data_criacao"
-            }
-        )
-    };
+    // ==========================================
+    // COMPONENTES PRINCIPAIS
+    // ==========================================
 
-    // ELEMENTOS DA INTERFACE
     private JTabbedPane abas;
 
-    private ArrayList<TelaTabela> telas =
-        new ArrayList<>();
+    private TelaTabela telaUsuario;
+    private TelaTabela telaPostagem;
+    private TelaTabela telaProject;
 
-    private TelaTabela telaAtual;
-
-    // CLASSE QUE REPRESENTA CADA TELA
-    private class TelaTabela {
-
-        Configuracao config;
-
-        JPanel painel;
-
-        JPanel formulario;
-
-        Map<String, JTextField> campos =
-            new LinkedHashMap<>();
-
-        JTable tabela;
-
-        DefaultTableModel modelo;
-
-        TelaTabela(Configuracao config) {
-
-            this.config = config;
-
-            criarTela();
-        }
-
-        // CRIAR INTERFACE
-        private void criarTela() {
-
-            painel = new JPanel(new BorderLayout(10, 10));
-
-            painel.setBorder(
-                BorderFactory.createEmptyBorder(10, 10, 10, 10)
-            );
-
-            // FORMULÁRIO
-            formulario = new JPanel(
-                new GridLayout(0, 2, 10, 10)
-            );
-
-            formulario.setBorder(
-                BorderFactory.createTitledBorder(
-                    "Dados de " + config.tabela.toUpperCase()
-                )
-            );
-
-            for (int i = 0; i < config.campos.length; i++) {
-
-                JLabel label = new JLabel(config.nomes[i]);
-
-                JTextField campo = new JTextField();
-
-                campos.put(config.campos[i], campo);
-
-                formulario.add(label);
-                formulario.add(campo);
-            }
-
-            // BOTÕES CRUD
-            JPanel botoes = new JPanel(
-                new FlowLayout(FlowLayout.CENTER, 15, 10)
-            );
-
-            JButton create = new JButton("Create");
-            JButton read = new JButton("Read");
-            JButton update = new JButton("Update");
-            JButton delete = new JButton("Delete");
-
-            botoes.add(create);
-            botoes.add(read);
-            botoes.add(update);
-            botoes.add(delete);
-
-            // TABELA
-            modelo = new DefaultTableModel();
-
-            tabela = new JTable(modelo);
-
-            tabela.setSelectionMode(
-                ListSelectionModel.SINGLE_SELECTION
-            );
-
-            tabela.setAutoResizeMode(
-                JTable.AUTO_RESIZE_OFF
-            );
-
-            JScrollPane scroll = new JScrollPane(tabela);
-
-            // ORGANIZAÇÃO
-            painel.add(formulario, BorderLayout.NORTH);
-            painel.add(scroll, BorderLayout.CENTER);
-            painel.add(botoes, BorderLayout.SOUTH);
-
-            // AÇÕES DOS BOTÕES
-            create.addActionListener(e -> cadastrar(this));
-
-            read.addActionListener(e -> consultar(this));
-
-            update.addActionListener(e -> atualizar(this));
-
-            delete.addActionListener(e -> excluir(this));
-
-            // SELECIONAR REGISTRO
-            tabela.getSelectionModel().addListSelectionListener(e -> {
-
-                if (!e.getValueIsAdjusting()) {
-                    preencherCampos(this);
-                }
-            });
-        }
-    }
-
+    // ==========================================
     // CONSTRUTOR
+    // ==========================================
+
     public Portfolio() {
 
-        setTitle("Portfolio - Gerenciamento");
-
+        setTitle("Sistema de Gerenciamento - Portfolio");
         setSize(1100, 700);
-
+        setMinimumSize(new Dimension(850, 550));
+        setLocationRelativeTo(null);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
-        setLocationRelativeTo(null);
+        getContentPane().setBackground(FUNDO);
+        setLayout(new BorderLayout());
 
-        abas = new JTabbedPane();
-
-        // CRIAR AS TRÊS TELAS
-        for (Configuracao config : configuracoes) {
-
-            TelaTabela tela = new TelaTabela(config);
-
-            telas.add(tela);
-
-            abas.addTab(
-                config.tabela.toUpperCase(),
-                tela.painel
-            );
-        }
-
-        add(abas);
-
-        // CONTROLE DE ACESSO ÀS ABAS
-        abas.addChangeListener(e -> {
-
-            int index = abas.getSelectedIndex();
-
-            if (index < 0) return;
-
-            if (index > 0 && !temUsuariosCadastrados()) {
-
-                abas.setSelectedIndex(0);
-
-                JOptionPane.showMessageDialog(
-                    this,
-                    "Primeiro, cadastre pelo menos um usuário!",
-                    "Acesso bloqueado",
-                    JOptionPane.WARNING_MESSAGE
-                );
-
-                return;
-            }
-
-            telaAtual = telas.get(index);
-
-            consultar(telaAtual);
-        });
-
-        // INICIAR NA ABA DE USUÁRIOS
-        telaAtual = telas.get(0);
-
-        consultar(telaAtual);
+        criarInterface();
 
         atualizarControleAbas();
 
         setVisible(true);
     }
 
-    // CONEXÃO COM O BANCO
-    private Connection conectar() throws SQLException {
+    // ==========================================
+    // CRIAÇÃO DA INTERFACE
+    // ==========================================
 
-        try {
-            Class.forName("com.mysql.cj.jdbc.Driver");
+    private void criarInterface() {
 
-        } catch (ClassNotFoundException e) {
+        // Cabeçalho
 
-            throw new SQLException(
-                "Driver MySQL não encontrado!", e
-            );
-        }
+        JPanel cabecalho = new JPanel(new BorderLayout());
+        cabecalho.setBackground(VERDE_ESCURO);
+        cabecalho.setBorder(
+            BorderFactory.createEmptyBorder(20, 25, 20, 25)
+        );
 
-        return DriverManager.getConnection(
-            URL, USUARIO, SENHA
+        JLabel titulo = new JLabel("SISTEMA PORTFOLIO");
+        titulo.setForeground(BRANCO);
+        titulo.setFont(new Font("Arial", Font.BOLD, 24));
+
+        JLabel subtitulo = new JLabel("Gerenciamento de dados");
+        subtitulo.setForeground(VERDE_CLARO);
+        subtitulo.setFont(new Font("Arial", Font.PLAIN, 13));
+
+        JPanel textos = new JPanel();
+        textos.setLayout(new BoxLayout(textos, BoxLayout.Y_AXIS));
+        textos.setBackground(VERDE_ESCURO);
+        textos.add(titulo);
+        textos.add(Box.createVerticalStrut(5));
+        textos.add(subtitulo);
+
+        cabecalho.add(textos, BorderLayout.WEST);
+
+        add(cabecalho, BorderLayout.NORTH);
+
+        // Abas
+
+        abas = new JTabbedPane();
+        abas.setFont(new Font("Arial", Font.BOLD, 14));
+        abas.setBackground(FUNDO);
+        abas.setForeground(TEXTO);
+        abas.setBorder(
+            BorderFactory.createEmptyBorder(8, 10, 8, 10)
+        );
+
+        // Criação das telas
+
+        telaUsuario = new TelaTabela(configUsuario);
+        telaPostagem = new TelaTabela(configPostagem);
+        telaProject = new TelaTabela(configProject);
+
+        // Ordem das abas
+
+        abas.addTab("Usuários", telaUsuario);
+        abas.addTab("Postagens", telaPostagem);
+        abas.addTab("Projetos", telaProject);
+
+        add(abas, BorderLayout.CENTER);
+
+        // Rodapé
+
+        JPanel rodape = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        rodape.setBackground(VERDE_ESCURO);
+        rodape.setBorder(
+            BorderFactory.createEmptyBorder(8, 10, 8, 10)
+        );
+
+        JLabel textoRodape = new JLabel("Sistema de gerenciamento de dados");
+        textoRodape.setForeground(BRANCO);
+        textoRodape.setFont(new Font("Arial", Font.PLAIN, 12));
+
+        rodape.add(textoRodape);
+
+        add(rodape, BorderLayout.SOUTH);
+    }
+
+    // ==========================================
+    // ESTILIZAÇÃO DOS BOTÕES
+    // ==========================================
+
+    private void estilizarBotao(
+        JButton botao,
+        Color cor,
+        Color corTexto
+    ) {
+
+        botao.setBackground(cor);
+        botao.setForeground(corTexto);
+        botao.setFont(new Font("Arial", Font.BOLD, 13));
+
+        botao.setFocusPainted(false);
+        botao.setBorderPainted(false);
+        botao.setOpaque(true);
+
+        botao.setCursor(
+            new Cursor(Cursor.HAND_CURSOR)
+        );
+
+        botao.setPreferredSize(new Dimension(115, 38));
+    }
+
+    // ==========================================
+    // ESTILIZAÇÃO DOS CAMPOS
+    // ==========================================
+
+    private void estilizarCampo(JTextField campo) {
+
+        campo.setFont(new Font("Arial", Font.PLAIN, 13));
+        campo.setForeground(TEXTO);
+        campo.setBackground(BRANCO);
+        campo.setCaretColor(VERDE);
+
+        campo.setBorder(
+            BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(
+                    new Color(190, 215, 197), 1
+                ),
+                BorderFactory.createEmptyBorder(7, 9, 7, 9)
+            )
         );
     }
 
-    // VERIFICAR SE EXISTEM USUÁRIOS
+    // ==========================================
+    // ESTILIZAÇÃO DA TABELA
+    // ==========================================
+
+    private void estilizarTabela(JTable tabela) {
+
+        tabela.setFont(new Font("Arial", Font.PLAIN, 12));
+        tabela.setRowHeight(30);
+
+        tabela.setForeground(TEXTO);
+        tabela.setBackground(BRANCO);
+
+        tabela.setSelectionBackground(VERDE_CLARO);
+        tabela.setSelectionForeground(VERDE_ESCURO);
+
+        tabela.setGridColor(new Color(220, 232, 222));
+        tabela.setShowVerticalLines(false);
+
+        tabela.setSelectionMode(
+            ListSelectionModel.SINGLE_SELECTION
+        );
+
+        JTableHeader cabecalho = tabela.getTableHeader();
+
+        cabecalho.setBackground(VERDE_ESCURO);
+        cabecalho.setForeground(BRANCO);
+        cabecalho.setFont(new Font("Arial", Font.BOLD, 13));
+        cabecalho.setPreferredSize(new Dimension(0, 35));
+
+        cabecalho.setReorderingAllowed(false);
+    }
+
+    // ==========================================
+    // VERIFICA SE EXISTEM USUÁRIOS
+    // ==========================================
+
     private boolean temUsuariosCadastrados() {
 
         String sql = "SELECT COUNT(*) FROM usuario";
 
-        try (Connection conexao = conectar();
-             Statement comando = conexao.createStatement();
-             ResultSet resultado = comando.executeQuery(sql)) {
+        try (
+            Connection conexao = conectar();
+            PreparedStatement stmt = conexao.prepareStatement(sql);
+            ResultSet resultado = stmt.executeQuery()
+        ) {
 
             if (resultado.next()) {
                 return resultado.getInt(1) > 0;
             }
 
         } catch (SQLException e) {
-
-            JOptionPane.showMessageDialog(
-                this,
-                "Erro ao verificar usuários: " + e.getMessage()
-            );
+            mostrarErro(e);
         }
 
         return false;
     }
 
-    // CONTROLAR ACESSO ÀS ABAS
+    // ==========================================
+    // CONTROLE DAS ABAS
+    // ==========================================
+
     private void atualizarControleAbas() {
 
         boolean existemUsuarios = temUsuariosCadastrados();
 
         abas.setEnabledAt(0, true);
-
         abas.setEnabledAt(1, existemUsuarios);
-
         abas.setEnabledAt(2, existemUsuarios);
+
+        if (!existemUsuarios) {
+            abas.setSelectedIndex(0);
+        }
     }
 
-    // OBTER DADOS DO FORMULÁRIO
-    private Map<String, Object> obterDados(TelaTabela tela) {
+    // ==========================================
+    // CLASSE RESPONSÁVEL POR CADA TABELA
+    // ==========================================
 
-        Map<String, Object> dados =
-            new LinkedHashMap<>();
+    private class TelaTabela extends JPanel {
 
-        for (String campo : tela.config.campos) {
+        private Configuracao config;
 
-            String valor = tela.campos.get(campo)
-                .getText().trim();
+        private JTable tabela;
+        private DefaultTableModel modelo;
 
-            // IMAGEM PODE FICAR VAZIA
-            if (campo.equals("imagem") && valor.isEmpty()) {
+        private JTextField[] campos;
 
-                dados.put(campo, null);
+        private JPanel formulario;
 
-                continue;
+        private TelaTabela(Configuracao config) {
+
+            this.config = config;
+
+            criarTela();
+            consultar();
+        }
+
+        // ======================================
+        // CRIAÇÃO DA TELA
+        // ======================================
+
+        private void criarTela() {
+
+            setLayout(new BorderLayout(12, 12));
+            setBackground(FUNDO);
+
+            setBorder(
+                BorderFactory.createEmptyBorder(15, 15, 15, 15)
+            );
+
+            // Painel do formulário
+
+            formulario = new JPanel(
+                new GridLayout(0, 2, 12, 10)
+            );
+
+            formulario.setBackground(FUNDO);
+
+            formulario.setBorder(
+                BorderFactory.createTitledBorder(
+                    BorderFactory.createLineBorder(VERDE, 1),
+                    config.titulo,
+                    TitledBorder.LEFT,
+                    TitledBorder.TOP,
+                    new Font("Arial", Font.BOLD, 14),
+                    VERDE_ESCURO
+                )
+            );
+
+            campos = new JTextField[config.campos.length];
+
+            for (int i = 0; i < config.campos.length; i++) {
+
+                JLabel rotulo = new JLabel(config.rotulos[i]);
+
+                rotulo.setFont(
+                    new Font("Arial", Font.BOLD, 12)
+                );
+
+                rotulo.setForeground(TEXTO);
+
+                JTextField campo = new JTextField();
+
+                estilizarCampo(campo);
+
+                campos[i] = campo;
+
+                formulario.add(rotulo);
+                formulario.add(campo);
             }
 
-            // STATUS PADRÃO
-            if (campo.equals("status") && valor.isEmpty()) {
+            add(formulario, BorderLayout.NORTH);
 
-                valor = "PUBLICADA";
+            // Tabela
+
+            modelo = new DefaultTableModel();
+
+            tabela = new JTable(modelo);
+
+            estilizarTabela(tabela);
+
+            JScrollPane rolagem = new JScrollPane(tabela);
+            rolagem.getViewport().setBackground(BRANCO);
+            rolagem.setBorder(
+                BorderFactory.createLineBorder(
+                    new Color(190, 215, 197)
+                )
+            );
+
+            add(rolagem, BorderLayout.CENTER);
+
+            // Botões
+
+            JPanel botoes = new JPanel(
+                new FlowLayout(FlowLayout.CENTER, 12, 8)
+            );
+
+            botoes.setBackground(FUNDO);
+
+            JButton create = new JButton("Create");
+            JButton read = new JButton("Read");
+            JButton update = new JButton("Update");
+            JButton delete = new JButton("Delete");
+
+            estilizarBotao(create, VERDE_ESCURO, BRANCO);
+            estilizarBotao(read, VERDE, BRANCO);
+            estilizarBotao(update, VERDE_MEDIO, BRANCO);
+            estilizarBotao(delete, new Color(116, 142, 121), BRANCO);
+
+            botoes.add(create);
+            botoes.add(read);
+            botoes.add(update);
+            botoes.add(delete);
+
+            add(botoes, BorderLayout.SOUTH);
+
+            // Ações dos botões
+
+            create.addActionListener(e -> cadastrar());
+            read.addActionListener(e -> consultar());
+            update.addActionListener(e -> atualizar());
+            delete.addActionListener(e -> excluir());
+
+            // Preenche formulário ao selecionar uma linha
+
+            tabela.getSelectionModel().addListSelectionListener(e -> {
+
+                if (!e.getValueIsAdjusting()) {
+                    preencherCampos();
+                }
+            });
+        }
+
+        // ======================================
+        // CREATE - CADASTRAR
+        // ======================================
+
+        private void cadastrar() {
+
+            StringBuilder sql = new StringBuilder(
+                "INSERT INTO " + config.nomeTabela + " ("
+            );
+
+            for (int i = 0; i < config.campos.length; i++) {
+
+                sql.append(config.campos[i]);
+
+                if (i < config.campos.length - 1) {
+                    sql.append(", ");
+                }
             }
 
-            // VALIDAR ID DO AUTOR
-            if (campo.equals("autor_id")) {
+            sql.append(") VALUES (");
 
-                try {
+            for (int i = 0; i < config.campos.length; i++) {
 
-                    dados.put(
-                        campo,
-                        Integer.parseInt(valor)
-                    );
+                sql.append("?");
 
-                } catch (NumberFormatException e) {
+                if (i < config.campos.length - 1) {
+                    sql.append(", ");
+                }
+            }
 
-                    JOptionPane.showMessageDialog(
-                        this,
-                        "O ID do autor deve ser numérico!"
-                    );
+            sql.append(")");
 
-                    return null;
+            try (Connection conexao = conectar();
+                 PreparedStatement stmt =
+                     conexao.prepareStatement(sql.toString())) {
+
+                for (int i = 0; i < campos.length; i++) {
+
+                    String valor = campos[i].getText().trim();
+
+                    if (valor.isEmpty()) {
+
+                        // Imagem é opcional.
+
+                        if (config.nomeTabela.equals("postagem")
+                            && config.campos[i].equals("imagem")) {
+
+                            stmt.setNull(i + 1, Types.VARCHAR);
+                            continue;
+                        }
+
+                        // Campos vazios opcionais.
+
+                        if (config.nomeTabela.equals("postagem")
+                            && config.campos[i].equals("autor_id")) {
+
+                            mostrarMensagem(
+                                "Informe o ID do usuário que publicou a postagem."
+                            );
+                            return;
+                        }
+
+                        mostrarMensagem(
+                            "Preencha o campo: " + config.rotulos[i]
+                        );
+
+                        return;
+                    }
+
+                    stmt.setString(i + 1, valor);
                 }
 
-            } else {
+                stmt.executeUpdate();
 
-                dados.put(campo, valor);
-            }
-        }
+                mostrarMensagem("Cadastro realizado com sucesso!");
 
-        // VALIDAR CAMPOS OBRIGATÓRIOS
-        for (String obrigatorio : tela.config.obrigatorios) {
+                limparCampos();
+                consultar();
 
-            Object valor = dados.get(obrigatorio);
-
-            if (valor == null ||
-                valor.toString().trim().isEmpty()) {
-
-                JOptionPane.showMessageDialog(
-                    this,
-                    "Preencha o campo: " + obrigatorio
-                );
-
-                return null;
-            }
-        }
-
-        return dados;
-    }
-
-    // CREATE - CADASTRAR
-    private void cadastrar(TelaTabela tela) {
-
-        Map<String, Object> dados = obterDados(tela);
-
-        if (dados == null) return;
-
-        StringBuilder sql = new StringBuilder(
-            "INSERT INTO " + tela.config.tabela + " ("
-        );
-
-        StringBuilder valores = new StringBuilder();
-
-        int contador = 0;
-
-        for (String campo : dados.keySet()) {
-
-            sql.append(campo);
-
-            valores.append("?");
-
-            contador++;
-
-            if (contador < dados.size()) {
-
-                sql.append(", ");
-
-                valores.append(", ");
-            }
-        }
-
-        sql.append(") VALUES (").append(valores).append(")");
-
-        try (Connection conexao = conectar();
-             PreparedStatement comando =
-                 conexao.prepareStatement(sql.toString())) {
-
-            int i = 1;
-
-            for (Object valor : dados.values()) {
-
-                comando.setObject(i++, valor);
-            }
-
-            comando.executeUpdate();
-
-            JOptionPane.showMessageDialog(
-                this,
-                "Registro cadastrado com sucesso!"
-            );
-
-            limparCampos(tela);
-
-            consultar(tela);
-
-            atualizarControleAbas();
-
-        } catch (SQLException e) {
-
-            JOptionPane.showMessageDialog(
-                this,
-                "Erro ao cadastrar: " + e.getMessage()
-            );
-        }
-    }
-
-    // READ - CONSULTAR
-    private void consultar(TelaTabela tela) {
-
-        String sql =
-            "SELECT * FROM " + tela.config.tabela;
-
-        try (Connection conexao = conectar();
-             Statement comando = conexao.createStatement();
-             ResultSet resultado = comando.executeQuery(sql)) {
-
-            ResultSetMetaData dados =
-                resultado.getMetaData();
-
-            int quantidade = dados.getColumnCount();
-
-            DefaultTableModel novoModelo =
-                new DefaultTableModel();
-
-            // CRIAR COLUNAS
-            for (int i = 1; i <= quantidade; i++) {
-
-                novoModelo.addColumn(
-                    dados.getColumnName(i)
-                );
-            }
-
-            // ADICIONAR REGISTROS
-            while (resultado.next()) {
-
-                Object[] linha = new Object[quantidade];
-
-                for (int i = 1; i <= quantidade; i++) {
-
-                    linha[i - 1] = resultado.getObject(i);
+                if (config.nomeTabela.equals("usuario")) {
+                    atualizarControleAbas();
                 }
 
-                novoModelo.addRow(linha);
-            }
-
-            tela.modelo = novoModelo;
-
-            tela.tabela.setModel(novoModelo);
-
-            tela.tabela.setAutoResizeMode(
-                JTable.AUTO_RESIZE_OFF
-            );
-
-        } catch (SQLException e) {
-
-            JOptionPane.showMessageDialog(
-                this,
-                "Erro ao consultar: " + e.getMessage()
-            );
-        }
-    }
-
-    // PREENCHER CAMPOS AO SELECIONAR REGISTRO
-    private void preencherCampos(TelaTabela tela) {
-
-        int linha = tela.tabela.getSelectedRow();
-
-        if (linha == -1) return;
-
-        for (String campo : tela.config.campos) {
-
-            int coluna = tela.modelo.findColumn(campo);
-
-            Object valor = tela.tabela.getValueAt(
-                linha, coluna
-            );
-
-            tela.campos.get(campo).setText(
-                valor == null ? "" : valor.toString()
-            );
-        }
-    }
-
-    // OBTER ID DO REGISTRO SELECIONADO
-    private int obterId(TelaTabela tela) {
-
-        int linha = tela.tabela.getSelectedRow();
-
-        if (linha == -1) {
-
-            JOptionPane.showMessageDialog(
-                this,
-                "Selecione um registro na tabela!"
-            );
-
-            return -1;
-        }
-
-        int coluna = tela.modelo.findColumn("id");
-
-        return Integer.parseInt(
-            tela.tabela.getValueAt(linha, coluna).toString()
-        );
-    }
-
-    // UPDATE - ATUALIZAR
-    private void atualizar(TelaTabela tela) {
-
-        int id = obterId(tela);
-
-        if (id == -1) return;
-
-        Map<String, Object> dados = obterDados(tela);
-
-        if (dados == null) return;
-
-        StringBuilder sql = new StringBuilder(
-            "UPDATE " + tela.config.tabela + " SET "
-        );
-
-        int contador = 0;
-
-        for (String campo : dados.keySet()) {
-
-            sql.append(campo).append(" = ?");
-
-            contador++;
-
-            if (contador < dados.size()) {
-
-                sql.append(", ");
+            } catch (SQLException e) {
+                mostrarErro(e);
             }
         }
 
-        sql.append(" WHERE id = ?");
+        // ======================================
+        // READ - CONSULTAR
+        // ======================================
 
-        try (Connection conexao = conectar();
-             PreparedStatement comando =
-                 conexao.prepareStatement(sql.toString())) {
+        private void consultar() {
 
-            int i = 1;
+            String sql = "SELECT * FROM " + config.nomeTabela;
 
-            for (Object valor : dados.values()) {
+            try (Connection conexao = conectar();
+                 PreparedStatement stmt =
+                     conexao.prepareStatement(sql);
+                 ResultSet resultado = stmt.executeQuery()) {
 
-                comando.setObject(i++, valor);
+                ResultSetMetaData dados = resultado.getMetaData();
+
+                int quantidadeColunas = dados.getColumnCount();
+
+                modelo = new DefaultTableModel();
+
+                for (int i = 1; i <= quantidadeColunas; i++) {
+                    modelo.addColumn(dados.getColumnName(i));
+                }
+
+                while (resultado.next()) {
+
+                    Object[] linha = new Object[quantidadeColunas];
+
+                    for (int i = 0; i < quantidadeColunas; i++) {
+                        linha[i] = resultado.getObject(i + 1);
+                    }
+
+                    modelo.addRow(linha);
+                }
+
+                tabela.setModel(modelo);
+
+                estilizarTabela(tabela);
+
+            } catch (SQLException e) {
+                mostrarErro(e);
             }
+        }
 
-            comando.setInt(i, id);
+        // ======================================
+        // UPDATE - ATUALIZAR
+        // ======================================
 
-            int resultado = comando.executeUpdate();
+        private void atualizar() {
 
-            if (resultado > 0) {
+            int linha = tabela.getSelectedRow();
 
-                JOptionPane.showMessageDialog(
-                    this,
-                    "Registro atualizado com sucesso!"
+            if (linha == -1) {
+                mostrarMensagem(
+                    "Selecione um registro da tabela para atualizar."
                 );
-
-                limparCampos(tela);
-
-                consultar(tela);
-
-                atualizarControleAbas();
+                return;
             }
 
-        } catch (SQLException e) {
+            Object id = tabela.getValueAt(linha, 0);
 
-            JOptionPane.showMessageDialog(
-                this,
-                "Erro ao atualizar: " + e.getMessage()
+            StringBuilder sql = new StringBuilder(
+                "UPDATE " + config.nomeTabela + " SET "
             );
+
+            for (int i = 0; i < config.campos.length; i++) {
+
+                sql.append(config.campos[i]).append(" = ?");
+
+                if (i < config.campos.length - 1) {
+                    sql.append(", ");
+                }
+            }
+
+            sql.append(" WHERE id = ?");
+
+            try (Connection conexao = conectar();
+                 PreparedStatement stmt =
+                     conexao.prepareStatement(sql.toString())) {
+
+                for (int i = 0; i < campos.length; i++) {
+
+                    String valor = campos[i].getText().trim();
+
+                    if (valor.isEmpty()) {
+
+                        if (config.nomeTabela.equals("postagem")
+                            && config.campos[i].equals("imagem")) {
+
+                            stmt.setNull(i + 1, Types.VARCHAR);
+                            continue;
+                        }
+
+                        mostrarMensagem(
+                            "Preencha o campo: " + config.rotulos[i]
+                        );
+
+                        return;
+                    }
+
+                    stmt.setString(i + 1, valor);
+                }
+
+                stmt.setObject(campos.length + 1, id);
+
+                stmt.executeUpdate();
+
+                mostrarMensagem("Registro atualizado com sucesso!");
+
+                limparCampos();
+                consultar();
+
+            } catch (SQLException e) {
+                mostrarErro(e);
+            }
+        }
+
+        // ======================================
+        // DELETE - EXCLUIR
+        // ======================================
+
+        private void excluir() {
+
+            int linha = tabela.getSelectedRow();
+
+            if (linha == -1) {
+                mostrarMensagem(
+                    "Selecione um registro da tabela para excluir."
+                );
+                return;
+            }
+
+            Object id = tabela.getValueAt(linha, 0);
+
+            int confirmacao = JOptionPane.showConfirmDialog(
+                this,
+                "Tem certeza que deseja excluir este registro?",
+                "Confirmar exclusão",
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE
+            );
+
+            if (confirmacao != JOptionPane.YES_OPTION) {
+                return;
+            }
+
+            String sql =
+                "DELETE FROM " + config.nomeTabela + " WHERE id = ?";
+
+            try (Connection conexao = conectar();
+                 PreparedStatement stmt =
+                     conexao.prepareStatement(sql)) {
+
+                stmt.setObject(1, id);
+
+                stmt.executeUpdate();
+
+                mostrarMensagem("Registro excluído com sucesso!");
+
+                limparCampos();
+                consultar();
+
+                if (config.nomeTabela.equals("usuario")) {
+                    atualizarControleAbas();
+                }
+
+            } catch (SQLException e) {
+                mostrarErro(e);
+            }
+        }
+
+        // ======================================
+        // PREENCHER CAMPOS AO SELECIONAR LINHA
+        // ======================================
+
+        private void preencherCampos() {
+
+            int linha = tabela.getSelectedRow();
+
+            if (linha == -1) {
+                return;
+            }
+
+            for (int i = 0; i < config.campos.length; i++) {
+
+                String coluna = config.campos[i];
+
+                int indice = -1;
+
+                for (int j = 0; j < tabela.getColumnCount(); j++) {
+
+                    if (tabela.getColumnName(j).equals(coluna)) {
+                        indice = j;
+                        break;
+                    }
+                }
+
+                if (indice >= 0) {
+
+                    Object valor = tabela.getValueAt(linha, indice);
+
+                    campos[i].setText(
+                        valor == null ? "" : valor.toString()
+                    );
+                }
+            }
+        }
+
+        // ======================================
+        // LIMPAR CAMPOS
+        // ======================================
+
+        private void limparCampos() {
+
+            for (JTextField campo : campos) {
+                campo.setText("");
+            }
+
+            tabela.clearSelection();
         }
     }
 
-    // DELETE - EXCLUIR
-    private void excluir(TelaTabela tela) {
+    // ==========================================
+    // MENSAGENS DO SISTEMA
+    // ==========================================
 
-        int id = obterId(tela);
+    private void mostrarMensagem(String mensagem) {
 
-        if (id == -1) return;
-
-        int resposta = JOptionPane.showConfirmDialog(
+        JOptionPane.showMessageDialog(
             this,
-            "Tem certeza que deseja excluir este registro?",
-            "Confirmar exclusão",
-            JOptionPane.YES_NO_OPTION
+            mensagem,
+            "Sistema Portfolio",
+            JOptionPane.INFORMATION_MESSAGE
+        );
+    }
+
+    private void mostrarErro(SQLException erro) {
+
+        JOptionPane.showMessageDialog(
+            this,
+            "Ocorreu um erro ao acessar o banco de dados:\n"
+                + erro.getMessage(),
+            "Erro",
+            JOptionPane.ERROR_MESSAGE
         );
 
-        if (resposta != JOptionPane.YES_OPTION) return;
-
-        String sql =
-            "DELETE FROM " + tela.config.tabela +
-            " WHERE id = ?";
-
-        try (Connection conexao = conectar();
-             PreparedStatement comando =
-                 conexao.prepareStatement(sql)) {
-
-            comando.setInt(1, id);
-
-            int resultado = comando.executeUpdate();
-
-            if (resultado > 0) {
-
-                JOptionPane.showMessageDialog(
-                    this,
-                    "Registro excluído com sucesso!"
-                );
-
-                limparCampos(tela);
-
-                consultar(tela);
-
-                atualizarControleAbas();
-            }
-
-        } catch (SQLException e) {
-
-            JOptionPane.showMessageDialog(
-                this,
-                "Erro ao excluir: " + e.getMessage()
-            );
-        }
+        erro.printStackTrace();
     }
 
-    // LIMPAR CAMPOS
-    private void limparCampos(TelaTabela tela) {
+    // ==========================================
+    // EXECUÇÃO DO PROGRAMA
+    // ==========================================
 
-        for (JTextField campo : tela.campos.values()) {
-
-            campo.setText("");
-        }
-
-        tela.tabela.clearSelection();
-    }
-
-    // EXECUTAR SISTEMA
     public static void main(String[] args) {
 
         SwingUtilities.invokeLater(() -> {
+
+            try {
+                UIManager.setLookAndFeel(
+                    UIManager.getSystemLookAndFeelClassName()
+                );
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
 
             new Portfolio();
         });
