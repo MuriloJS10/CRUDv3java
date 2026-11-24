@@ -4,11 +4,13 @@ import javax.swing.border.*;
 import javax.swing.table.*;
 import java.awt.*;
 import java.sql.*;
-import java.util.ArrayList;
-import java.util.List;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 
 public class Portfolio extends JFrame {
-
+    
+    
     // ==========================================
     // CORES DO SISTEMA - PALETA VERDE
     // ==========================================
@@ -87,8 +89,8 @@ public class Portfolio extends JFrame {
             "id", "titulo", "descricao", "link",
             "tecnologias", "data_criacao"
         },
-        new String[]{"titulo", "descricao", "link", "tecnologias"},
-        new String[]{"Título", "Descrição", "Link", "Tecnologias"}
+        new String[]{"titulo", "descricao", "link", "tecnologias", "data_criacao"},
+        new String[]{"Título", "Descrição", "Link", "Tecnologias", "Data de criação"}
     );
 
     // ==========================================
@@ -525,7 +527,15 @@ public class Portfolio extends JFrame {
                         return;
                     }
 
-                    stmt.setString(i + 1, valor);
+                    if (config.nomeTabela.equals("project")
+                        && config.campos[i].equals("data_criacao")) {
+                        LocalDate data = LocalDate.parse(
+                            valor, DateTimeFormatter.ofPattern("dd/MM/uuuu")
+                        );
+                        stmt.setDate(i + 1, java.sql.Date.valueOf(data));
+                    } else {
+                        stmt.setString(i + 1, valor);
+                    }
                 }
 
                 stmt.executeUpdate();
@@ -539,6 +549,8 @@ public class Portfolio extends JFrame {
                     atualizarControleAbas();
                 }
 
+            } catch (DateTimeParseException e) {
+                mostrarMensagem("Data inválida. Digite no formato dd/MM/aaaa (exemplo: 23/11/2026).");
             } catch (SQLException e) {
                 mostrarErro(e);
             }
@@ -572,7 +584,15 @@ public class Portfolio extends JFrame {
                     Object[] linha = new Object[quantidadeColunas];
 
                     for (int i = 0; i < quantidadeColunas; i++) {
-                        linha[i] = resultado.getObject(i + 1);
+                        Object valor = resultado.getObject(i + 1);
+
+                        if ("data_criacao".equals(dados.getColumnName(i + 1))
+                            && valor instanceof java.util.Date) {
+                            valor = new java.text.SimpleDateFormat("dd/MM/yyyy")
+                                .format((java.util.Date) valor);
+                        }
+
+                        linha[i] = valor;
                     }
 
                     modelo.addRow(linha);
@@ -643,7 +663,15 @@ public class Portfolio extends JFrame {
                         return;
                     }
 
-                    stmt.setString(i + 1, valor);
+                    if (config.nomeTabela.equals("project")
+                        && config.campos[i].equals("data_criacao")) {
+                        LocalDate data = LocalDate.parse(
+                            valor, DateTimeFormatter.ofPattern("dd/MM/uuuu")
+                        );
+                        stmt.setDate(i + 1, java.sql.Date.valueOf(data));
+                    } else {
+                        stmt.setString(i + 1, valor);
+                    }
                 }
 
                 stmt.setObject(campos.length + 1, id);
@@ -655,6 +683,8 @@ public class Portfolio extends JFrame {
                 limparCampos();
                 consultar();
 
+            } catch (DateTimeParseException e) {
+                mostrarMensagem("Data inválida. Digite no formato dd/MM/aaaa (exemplo: 23/11/2026).");
             } catch (SQLException e) {
                 mostrarErro(e);
             }
